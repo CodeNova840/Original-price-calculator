@@ -4,7 +4,6 @@ import path from 'path';
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
-  const apiProxyTarget = env.VITE_API_PROXY_TARGET || 'http://164.68.124.43:5000';
 
   return {
     plugins: [react()],
@@ -17,7 +16,7 @@ export default defineConfig(({ mode }) => {
       open: true,
       proxy: {
         '/api': {
-          target: apiProxyTarget,
+          target: env.VITE_API_PROXY_TARGET,
           changeOrigin: true,
           secure: false,
         },
