@@ -1,456 +1,86 @@
-import { useState } from "react";
-import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
-import {
-  createColumnHelper,
-  flexRender,
-  getCoreRowModel,
-  getSortedRowModel,
-  getPaginationRowModel,
-  useReactTable,
-  SortingState,
-} from "@tanstack/react-table";
-import { format } from "date-fns";
-import { Eye, Edit, Trash2, ChevronLeft, ChevronRight } from "lucide-react";
-import { toast } from "react-hot-toast";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
-import { Skeleton } from "@/components/ui/skeleton";
-import { saleService, Sale } from "@/services/sale-service";
-import { productService } from "@/services/product-service";
-import SaleDetailsModal from "./models/view-detail-model";
-import CreateSaleForm from "./create-sales-form";
+import { useMemo, useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { createColumnHelper, flexRender, getCoreRowModel, getSortedRowModel, type SortingState, useReactTable } from '@tanstack/react-table';
+import { format, isSameMonth } from 'date-fns';
+import { ChevronLeft, ChevronRight, Edit, Eye, Trash2 } from 'lucide-react';
+import { toast } from 'react-hot-toast';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import CreateSaleForm from './create-sales-form';
+import SaleDetailsModal from './models/view-detail-model';
+import { saleService, type Sale, type SaleFilters } from '@/services/sale-service';
 
-const columnHelper = createColumnHelper<Sale & { productCount: number }>();
+const columnHelper = createColumnHelper<Sale>();
+const toNumber = (value: number) => Number.isFinite(Number(value)) ? Number(value) : 0;
 
 export default function SalesTable() {
   const queryClient = useQueryClient();
   const [sorting, setSorting] = useState<SortingState>([]);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
-  const [search, setSearch] = useState("");
-  const [searchInput, setSearchInput] = useState("");
-  const [cityFilter, setCityFilter] = useState("all");
-  const [productFilter, setProductFilter] = useState("all");
-  const [monthFilter, setMonthFilter] = useState("all");
-  const [yearFilter, setYearFilter] = useState(format(new Date(), "yyyy"));
+  const [filters, setFilters] = useState<SaleFilters>({});
+  const [draftFilters, setDraftFilters] = useState<SaleFilters>({});
   const [selectedSale, setSelectedSale] = useState<Sale | null>(null);
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [deleteId, setDeleteId] = useState<number | null>(null);
 
-  const { data: products } = useQuery({
-    queryKey: ["products"],
-    queryFn: productService.getProducts,
-  });
-
   const { data: salesData, isLoading } = useQuery({
-    queryKey: [
-      "sales",
-      page,
-      pageSize,
-      search,
-      cityFilter,
-      productFilter,
-      monthFilter,
-      yearFilter,
-    ],
-    queryFn: () =>
-      saleService.getSales({
-        page,
-        limit: pageSize,
-        search: search || undefined,
-        city: cityFilter || undefined,
-     productId: productFilter && productFilter !== "all" ? parseInt(productFilter) : undefined,
-        month: monthFilter || undefined,
-        year: yearFilter || undefined,
-      }),
+    queryKey: ['sales', page, pageSize, filters],
+    queryFn: () => saleService.getSales({ ...filters, page, limit: pageSize }),
   });
-
+  const { data: allSalesData } = useQuery({
+    queryKey: ['sales', 'monthly-summary'],
+    queryFn: () => saleService.getSales({ page: 1, limit: 1000 }),
+  });
+  const monthlySummary = useMemo(() => {
+    const currentMonthSales = (allSalesData?.sales ?? []).filter((sale) => isSameMonth(new Date(sale.saleDate), new Date()));
+    return currentMonthSales.reduce((summary, sale) => ({
+      totalSales: summary.totalSales + 1,
+      totalRevenue: summary.totalRevenue + toNumber(sale.totalAmount),
+      totalProfit: summary.totalProfit + toNumber(sale.totalProfit),
+    }), { totalSales: 0, totalRevenue: 0, totalProfit: 0 });
+  }, [allSalesData]);
   const deleteMutation = useMutation({
-    mutationFn: (id: number) => saleService.deleteSale(id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["sales"] });
-      toast.success("Sale deleted successfully");
-      setDeleteId(null);
-    },
-    onError: (error: any) => {
-      toast.error(error.response?.data?.message || "Failed to delete sale");
-    },
+    mutationFn: saleService.deleteSale,
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['sales'] }); toast.success('Sale deleted successfully'); setDeleteId(null); },
+    onError: (error: { response?: { data?: { message?: string } } }) => toast.error(error.response?.data?.message ?? 'Failed to delete sale'),
   });
 
-  const columns = [
-    columnHelper.accessor("saleDate", {
-      header: "Date",
-      cell: (info) => format(new Date(info.getValue()), "dd/MM/yyyy"),
-    }),
-    columnHelper.accessor("customerName", {
-      header: "Customer Name",
-    }),
-    columnHelper.accessor("customerContact", {
-      header: "Contact Number",
-    }),
-    columnHelper.accessor("city", {
-      header: "City",
-    }),
-    columnHelper.accessor("productCount", {
-      header: "Product Count",
-      cell: (info) => info.getValue() || 0,
-    }),
-    columnHelper.accessor("totalAmount", {
-      header: "Total Amount",
-      cell: (info) => {
-        const value = info.getValue();
-        return `$${Number(value).toFixed(2)}`;
-      },
-    }),
-    columnHelper.accessor("totalProfit", {
-      header: "Total Profit",
-      cell: (info) => {
-        const value = info.getValue();
-        return `$${Number(value).toFixed(2)}`;
-      },
-    }),
-    columnHelper.accessor("trackingNumber", {
-      header: "Tracking Number",
-    }),
-    columnHelper.accessor("courierName", {
-      header: "Courier Name",
-    }),
-    columnHelper.display({
-      id: "actions",
-      header: "Actions",
-      cell: (info) => (
-        <div className="flex space-x-2">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => {
-              setSelectedSale(info.row.original);
-              setIsDetailsOpen(true);
-            }}
-          >
-            <Eye className="h-4 w-4" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => {
-              setSelectedSale(info.row.original);
-              setIsEditOpen(true);
-            }}
-          >
-            <Edit className="h-4 w-4" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setDeleteId(info.row.original.id)}
-          >
-            <Trash2 className="h-4 w-4 text-destructive" />
-          </Button>
-        </div>
-      ),
-    }),
-  ];
-  const tableData = (salesData?.sales || []).map((sale) => ({
-    ...sale,
-    productCount: sale.productCount ?? 0,
-  }));
-  const table = useReactTable({
-    data: tableData,
-    columns,
-    state: {
-      sorting,
-    },
-    onSortingChange: setSorting,
-    getCoreRowModel: getCoreRowModel(),
-    getSortedRowModel: getSortedRowModel(),
-    getPaginationRowModel: getPaginationRowModel(),
-    manualPagination: true,
-    pageCount: salesData?.totalPages || 0,
-  });
-
-  const handleSearch = () => {
-    setSearch(searchInput);
+  const columns = useMemo(() => [
+    columnHelper.accessor('saleDate', { header: 'Date', cell: (info) => format(new Date(info.getValue()), 'dd/MM/yyyy') }),
+    columnHelper.accessor('customerName', { header: 'Customer Name' }),
+    columnHelper.accessor('customerContact', { header: 'Contact Number' }),
+    columnHelper.accessor('city', { header: 'City' }),
+    columnHelper.accessor('totalAmount', { header: 'Total Amount', cell: (info) => `$${toNumber(info.getValue()).toFixed(2)}` }),
+    columnHelper.accessor('totalProfit', { header: 'Total Profit', cell: (info) => <span className="text-green-600">${toNumber(info.getValue()).toFixed(2)}</span> }),
+    columnHelper.accessor('trackingNumber', { header: 'Tracking Number' }),
+    columnHelper.accessor('courierName', { header: 'Courier Name' }),
+    columnHelper.display({ id: 'actions', header: 'Actions', cell: (info) => <div className="flex gap-1"><Button aria-label="View sale" variant="ghost" size="icon" onClick={() => { setSelectedSale(info.row.original); setIsDetailsOpen(true); }}><Eye className="h-4 w-4" /></Button><Button aria-label="Edit sale" variant="ghost" size="icon" onClick={() => { setSelectedSale(info.row.original); setIsEditOpen(true); }}><Edit className="h-4 w-4" /></Button><Button aria-label="Delete sale" variant="ghost" size="icon" onClick={() => setDeleteId(info.row.original.id)}><Trash2 className="h-4 w-4 text-destructive" /></Button></div> }),
+  ], []);
+  const table = useReactTable({ data: salesData?.sales ?? [], columns, state: { sorting }, onSortingChange: setSorting, getCoreRowModel: getCoreRowModel(), getSortedRowModel: getSortedRowModel(), manualPagination: true, pageCount: salesData?.totalPages ?? 0 });
+  const applyFilters = () => {
+    const nextFilters = Object.fromEntries(Object.entries(draftFilters).filter(([, value]) => value)) as SaleFilters;
+    if (nextFilters.city) nextFilters.city = nextFilters.city.trim().toUpperCase();
+    if (nextFilters.customerName) nextFilters.customerName = nextFilters.customerName.trim();
+    if (nextFilters.customerContact) nextFilters.customerContact = nextFilters.customerContact.trim();
+    setFilters(nextFilters);
     setPage(1);
   };
+  const resetFilters = () => { setDraftFilters({}); setFilters({}); setPage(1); };
 
-  const handleKeyPress = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter") {
-      handleSearch();
-    }
-  };
-
-  const currentYear = new Date().getFullYear();
-
-  const years = Array.from({ length: 5 }, (_, i) => currentYear - i);
-  const months = [
-    { value: "1", label: "January" },
-    { value: "2", label: "February" },
-    { value: "3", label: "March" },
-    { value: "4", label: "April" },
-    { value: "5", label: "May" },
-    { value: "6", label: "June" },
-    { value: "7", label: "July" },
-    { value: "8", label: "August" },
-    { value: "9", label: "September" },
-    { value: "10", label: "October" },
-    { value: "11", label: "November" },
-    { value: "12", label: "December" },
-  ];
-
-  const handleReset = () => {
-    setSearchInput("");
-    setSearch("");
-    setCityFilter("");
-    setProductFilter("");
-    setMonthFilter("");
-    setYearFilter(format(new Date(), "yyyy"));
-    setPage(1);
-  }
-
-  if (isLoading) {
-    return (
-      <div className="space-y-4">
-        <div className="flex justify-between items-center">
-          <Skeleton className="h-10 w-64" />
-          <Skeleton className="h-10 w-32" />
-        </div>
-        <div className="space-y-2">
-          {Array.from({ length: 5 }).map((_, i) => (
-            <Skeleton key={i} className="h-16 w-full" />
-          ))}
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <>
-      <div className="space-y-4">
-        {/* Filters */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4">
-          <div className="lg:col-span-2">
-            <Input
-              placeholder="Search by customer name or tracking number..."
-              value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
-              onKeyPress={handleKeyPress}
-            />
-          </div>
-          <Select value={cityFilter} onValueChange={setCityFilter}>
-            <SelectTrigger>
-              <SelectValue placeholder="All Cities" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Cities</SelectItem>
-              <SelectItem value="Lahore">Lahore</SelectItem>
-              <SelectItem value="Karachi">Karachi</SelectItem>
-              <SelectItem value="Islamabad">Islamabad</SelectItem>
-              <SelectItem value="Rawalpindi">Rawalpindi</SelectItem>
-            </SelectContent>
-          </Select>
-          <Select value={productFilter} onValueChange={setProductFilter}>
-            <SelectTrigger>
-              <SelectValue placeholder="All Products" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Products</SelectItem>
-              {products?.map((product) => (
-                <SelectItem key={product.id} value={product.id.toString()}>
-                  {product.productName}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select value={monthFilter} onValueChange={setMonthFilter}>
-            <SelectTrigger>
-              <SelectValue placeholder="All Months" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Months</SelectItem>
-              {months.map((month) => (
-                <SelectItem key={month.value} value={month.value}>
-                  {month.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select value={yearFilter} onValueChange={setYearFilter}>
-            <SelectTrigger>
-              <SelectValue placeholder="Year" />
-            </SelectTrigger>
-            <SelectContent>
-              {years.map((year) => (
-                <SelectItem key={year} value={year.toString()}>
-                  {year}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Button onClick={handleSearch}>Search</Button>
-          <Button variant="outline" onClick={handleReset}>Reset</Button>
-        </div>
-
-        {/* Table */}
-        <div className="rounded-md border">
-          <Table>
-            <TableHeader>
-              {table.getHeaderGroups().map((headerGroup) => (
-                <TableRow key={headerGroup.id}>
-                  {headerGroup.headers.map((header) => (
-                    <TableHead key={header.id}>
-                      {header.isPlaceholder
-                        ? null
-                        : flexRender(
-                            header.column.columnDef.header,
-                            header.getContext(),
-                          )}
-                    </TableHead>
-                  ))}
-                </TableRow>
-              ))}
-            </TableHeader>
-            <TableBody>
-              {table.getRowModel().rows?.length ? (
-                table.getRowModel().rows.map((row) => (
-                  <TableRow key={row.id}>
-                    {row.getVisibleCells().map((cell) => (
-                      <TableCell key={cell.id}>
-                        {flexRender(
-                          cell.column.columnDef.cell,
-                          cell.getContext(),
-                        )}
-                      </TableCell>
-                    ))}
-                  </TableRow>
-                ))
-              ) : (
-                <TableRow>
-                  <TableCell colSpan={columns.length} className="text-center">
-                    No sales found
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </div>
-
-        {/* Pagination */}
-        {salesData && salesData.total > 0 && (
-          <div className="flex items-center justify-between">
-            <div className="text-sm text-muted-foreground">
-              Showing {(page - 1) * pageSize + 1} to{" "}
-              {Math.min(page * pageSize, salesData.total)} of {salesData.total}{" "}
-              results
-            </div>
-            <div className="flex items-center space-x-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setPage(page - 1)}
-                disabled={page === 1}
-              >
-                <ChevronLeft className="h-4 w-4" />
-                Previous
-              </Button>
-              <div className="text-sm">
-                Page {page} of {salesData.totalPages}
-              </div>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setPage(page + 1)}
-                disabled={page === salesData.totalPages}
-              >
-                Next
-                <ChevronRight className="h-4 w-4" />
-              </Button>
-              <Select
-                value={pageSize.toString()}
-                onValueChange={(value) => {
-                  setPageSize(parseInt(value));
-                  setPage(1);
-                }}
-              >
-                <SelectTrigger className="w-24">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {[10, 20, 30, 50].map((size) => (
-                    <SelectItem key={size} value={size.toString()}>
-                      {size} / page
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Modals */}
-      {selectedSale && (
-        <>
-          <SaleDetailsModal
-            open={isDetailsOpen}
-            onOpenChange={setIsDetailsOpen}
-            sale={selectedSale}
-          />
-          <CreateSaleForm
-            open={isEditOpen}
-            onOpenChange={setIsEditOpen}
-            editSale={selectedSale}
-          />
-        </>
-      )}
-
-      {/* Delete Confirmation Dialog */}
-      <AlertDialog open={!!deleteId} onOpenChange={() => setDeleteId(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Are you sure?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This action cannot be undone. This will permanently delete the
-              sale record.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => deleteId && deleteMutation.mutate(deleteId)}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
-              Delete
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </>
-  );
+  if (isLoading) return <div className="space-y-4">{Array.from({ length: 5 }, (_, index) => <Skeleton key={index} className="h-16 w-full" />)}</div>;
+  return <><div className="space-y-6">
+    <div className="grid grid-cols-1 gap-4 md:grid-cols-3">{([['Total Sales', monthlySummary.totalSales.toString()], ['Total Revenue', `$${monthlySummary.totalRevenue.toFixed(2)}`], ['Total Profit', `$${monthlySummary.totalProfit.toFixed(2)}`]] as const).map(([label, value]) => <Card key={label}><CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">{label} — Current Month</CardTitle></CardHeader><CardContent><p className="text-2xl font-bold">{value}</p></CardContent></Card>)}</div>
+    <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-6"><Input type="date" aria-label="Filter by sale date" value={draftFilters.saleDate ?? ''} onChange={(event) => setDraftFilters((current) => ({ ...current, saleDate: event.target.value }))} /><Input placeholder="Customer name" value={draftFilters.customerName ?? ''} onChange={(event) => setDraftFilters((current) => ({ ...current, customerName: event.target.value }))} /><Input placeholder="Contact number" value={draftFilters.customerContact ?? ''} onChange={(event) => setDraftFilters((current) => ({ ...current, customerContact: event.target.value }))} /><Input placeholder="City" value={draftFilters.city ?? ''} onChange={(event) => setDraftFilters((current) => ({ ...current, city: event.target.value }))} /><Button onClick={applyFilters}>Apply Filters</Button><Button variant="outline" onClick={resetFilters}>Reset</Button></div>
+    <div className="overflow-x-auto rounded-md border"><Table><TableHeader>{table.getHeaderGroups().map((headerGroup) => <TableRow key={headerGroup.id}>{headerGroup.headers.map((header) => <TableHead key={header.id}>{header.isPlaceholder ? null : flexRender(header.column.columnDef.header, header.getContext())}</TableHead>)}</TableRow>)}</TableHeader><TableBody>{table.getRowModel().rows.length ? table.getRowModel().rows.map((row) => <TableRow key={row.id}>{row.getVisibleCells().map((cell) => <TableCell key={cell.id}>{flexRender(cell.column.columnDef.cell, cell.getContext())}</TableCell>)}</TableRow>) : <TableRow><TableCell colSpan={columns.length} className="text-center">No sales found</TableCell></TableRow>}</TableBody></Table></div>
+    {salesData && salesData.total > 0 && <div className="flex flex-wrap items-center justify-between gap-3"><p className="text-sm text-muted-foreground">Showing {(page - 1) * pageSize + 1}–{Math.min(page * pageSize, salesData.total)} of {salesData.total}</p><div className="flex items-center gap-2"><Button variant="outline" size="sm" disabled={page === 1} onClick={() => setPage((current) => current - 1)}><ChevronLeft className="h-4 w-4" />Previous</Button><span className="text-sm">Page {page} of {salesData.totalPages}</span><Button variant="outline" size="sm" disabled={page >= salesData.totalPages} onClick={() => setPage((current) => current + 1)}>Next<ChevronRight className="h-4 w-4" /></Button><Input className="w-20" type="number" min="1" value={pageSize} onChange={(event) => { setPageSize(Math.max(1, Number(event.target.value) || 10)); setPage(1); }} /></div></div>}
+  </div>
+  {selectedSale && <><SaleDetailsModal open={isDetailsOpen} onOpenChange={setIsDetailsOpen} sale={selectedSale} /><CreateSaleForm open={isEditOpen} onOpenChange={setIsEditOpen} editSale={selectedSale} /></>}
+  <AlertDialog open={deleteId !== null} onOpenChange={() => setDeleteId(null)}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Delete this sale?</AlertDialogTitle><AlertDialogDescription>This action cannot be undone.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel><AlertDialogAction className="bg-destructive text-destructive-foreground" onClick={() => deleteId !== null && deleteMutation.mutate(deleteId)}>Delete</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
+  </>;
 }
