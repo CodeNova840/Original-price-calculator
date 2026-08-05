@@ -275,24 +275,6 @@ export default function SettingsModal({
     },
   });
 
-  const handleUpdateAllProducts = useCallback(async () => {
-    if (products.length === 0) return;
-
-    const promises = products.map((product) =>
-      updateProductMutation.mutateAsync({
-        id: product.id,
-        name: product.productName,
-      }),
-    );
-
-    try {
-      await Promise.all(promises);
-      toast.success("All products updated successfully");
-    } catch (error) {
-      toast.error("Failed to update some products");
-    }
-  }, [products, updateProductMutation]);
-
   const handleUpdateAllProfitRules = useCallback(async () => {
     if (profitRules.length === 0) return;
 
@@ -446,8 +428,27 @@ export default function SettingsModal({
                           placeholder="Product name"
                         />
                         <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() =>
+                            updateProductMutation.mutate({
+                              id: product.id,
+                              name: product.productName.trim(),
+                            })
+                          }
+                          disabled={
+                            !product.productName.trim() ||
+                            updateProductMutation.isPending
+                          }
+                        >
+                          <Save className="mr-2 h-4 w-4" />
+                          Update
+                        </Button>
+                        <Button
+                          type="button"
                           variant="destructive"
                           size="icon"
+                          aria-label={`Delete ${product.productName}`}
                           onClick={() =>
                             handleDeleteClick(
                               "product",
@@ -482,17 +483,6 @@ export default function SettingsModal({
                       </Button>
                     </form>
 
-                    {/* Update all button */}
-                    {products.length > 0 && (
-                      <Button
-                        onClick={handleUpdateAllProducts}
-                        className="w-full"
-                        disabled={isUpdating}
-                      >
-                        <Save className="h-4 w-4 mr-2" />
-                        Update All Products
-                      </Button>
-                    )}
                   </>
                 )}
               </div>

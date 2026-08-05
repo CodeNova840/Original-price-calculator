@@ -1,7 +1,7 @@
 import { useState } from 'react';
 // import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { motion } from 'framer-motion';
-import { Plus, Settings, LogOut, User, Sun, Moon } from 'lucide-react';
+import { Plus, Settings, LogOut, User, Sun, Moon, Package } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAuthStore } from '@/store/auth-store';
 import { useTheme } from '@/components/theme-provider';
@@ -56,6 +56,15 @@ export default function Dashboard() {
               </div>
             </div>
             <div className="flex items-center space-x-4">
+              <Button
+                variant="outline"
+                onClick={() => setIsSettingsOpen(true)}
+                className="gap-2"
+              >
+                <Package className="h-4 w-4" />
+                <span className="hidden sm:inline">Products</span>
+                <span className="sm:hidden">Products</span>
+              </Button>
               <Button onClick={() => setIsCreateSaleOpen(true)} className="gap-2">
                 <Plus className="h-4 w-4" />
                 Create Sale
