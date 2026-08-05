@@ -85,33 +85,19 @@ export default function CreateSaleForm({ open, onOpenChange, editSale }: CreateS
   );
   const totalAmount = money(totalProductAmount + asNumber(deliveryCharges));
 
-  const calculateProfit = (productId: string, quantity: number, quantityType: 'gram' | 'kilogram') => {
-    const rule = products.find((product) => product.id === Number(productId))?.profitRule;
-    if (!rule) return 0;
-    const rate = quantityType === 'gram' ? rule.profitPerGram : rule.profitPerKilogram;
-    return money(quantity * asNumber(rate));
-  };
-
   const updateQuantityOrPrice = (index: number, field: 'quantity' | 'itemPrice', value: number) => {
     const item = getValues(`items.${index}`);
     const nextItem = { ...item, [field]: value };
     setValue(`items.${index}.${field}`, value, { shouldDirty: true, shouldValidate: true });
     setValue(`items.${index}.itemTotal`, money(asNumber(nextItem.quantity) * asNumber(nextItem.itemPrice)), { shouldDirty: true, shouldValidate: true });
-    if (field === 'quantity') {
-      setValue(`items.${index}.itemProfit`, calculateProfit(nextItem.productId, asNumber(nextItem.quantity), nextItem.quantityType), { shouldDirty: true });
-    }
   };
 
   const updateProduct = (index: number, productId: string) => {
-    const item = getValues(`items.${index}`);
     setValue(`items.${index}.productId`, productId, { shouldDirty: true, shouldValidate: true });
-    setValue(`items.${index}.itemProfit`, calculateProfit(productId, asNumber(item.quantity), item.quantityType), { shouldDirty: true });
   };
 
   const updateQuantityType = (index: number, quantityType: 'gram' | 'kilogram') => {
-    const item = getValues(`items.${index}`);
     setValue(`items.${index}.quantityType`, quantityType, { shouldDirty: true });
-    setValue(`items.${index}.itemProfit`, calculateProfit(item.productId, asNumber(item.quantity), quantityType), { shouldDirty: true });
   };
 
   const saveSale = useMutation({
@@ -189,13 +175,13 @@ export default function CreateSaleForm({ open, onOpenChange, editSale }: CreateS
         </div></section>
         <section className="space-y-3"><h3 className="text-lg font-semibold">Receipt Image</h3><div className="rounded-lg border-2 border-dashed p-5 text-center">{(receiptPreview ?? editSale?.receiptImage) ? <div className="relative inline-block"><img src={receiptPreview ?? editSale?.receiptImage ?? ''} alt="Receipt preview" className="max-h-48 rounded-lg" /><Button type="button" variant="destructive" size="icon" className="absolute -right-2 -top-2" onClick={() => { setReceiptFile(null); setReceiptPreview(''); }}><X className="h-4 w-4" /></Button></div> : <Label htmlFor="receiptImage" className="cursor-pointer"><Upload className="mx-auto h-8 w-8" /><span className="text-primary">Choose an image</span><Input id="receiptImage" type="file" accept="image/*" className="hidden" onChange={handleReceiptChange} /></Label>}</div></section>
         <section className="space-y-4"><div className="flex items-center justify-between"><h3 className="text-lg font-semibold">Product Items</h3><Button type="button" variant="outline" size="sm" onClick={() => append({ ...emptyItem })}><Plus className="mr-2 h-4 w-4" />Add Product</Button></div>
-          <AnimatePresence>{fields.map((field, index) => { const item = items?.[index] ?? emptyItem; const rule = products.find((product) => product.id === Number(item.productId))?.profitRule; return <motion.div key={field.id} initial={{ opacity: 0, y: -12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -12 }} className="space-y-4 rounded-lg border p-4"><div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+          <AnimatePresence>{fields.map((field, index) => { const item = items?.[index] ?? emptyItem; return <motion.div key={field.id} initial={{ opacity: 0, y: -12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -12 }} className="space-y-4 rounded-lg border p-4"><div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
             <div><Label>Product</Label><Select value={item.productId} onValueChange={(value) => updateProduct(index, value)}><SelectTrigger><SelectValue placeholder="Select product" /></SelectTrigger><SelectContent>{products.map((product) => <SelectItem key={product.id} value={String(product.id)}>{product.productName}</SelectItem>)}</SelectContent></Select>{errors.items?.[index]?.productId && <p className="mt-1 text-sm text-destructive">{errors.items[index]?.productId?.message}</p>}</div>
             <div><Label>Quantity</Label><Input type="number" min="0.01" step="0.01" value={item.quantity || ''} onChange={(event) => updateQuantityOrPrice(index, 'quantity', asNumber(event.target.value))} />{errors.items?.[index]?.quantity && <p className="mt-1 text-sm text-destructive">{errors.items[index]?.quantity?.message}</p>}</div>
             <div><Label>Quantity Type</Label><Select value={item.quantityType} onValueChange={(value: 'gram' | 'kilogram') => updateQuantityType(index, value)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="gram">Gram</SelectItem><SelectItem value="kilogram">Kilogram</SelectItem></SelectContent></Select></div>
             <div><Label>Item Price (per {item.quantityType === 'gram' ? 'gram' : 'kilogram'})</Label><Input type="number" min="0" step="0.01" value={item.itemPrice || ''} onChange={(event) => updateQuantityOrPrice(index, 'itemPrice', asNumber(event.target.value))} />{errors.items?.[index]?.itemPrice && <p className="mt-1 text-sm text-destructive">{errors.items[index]?.itemPrice?.message}</p>}</div>
             <div><Label>Item Total</Label><Input type="number" min="0" step="0.01" value={item.itemTotal || ''} onChange={(event) => setValue(`items.${index}.itemTotal`, asNumber(event.target.value), { shouldDirty: true, shouldValidate: true })} />{errors.items?.[index]?.itemTotal && <p className="mt-1 text-sm text-destructive">{errors.items[index]?.itemTotal?.message}</p>}</div>
-            <div className="flex items-end"><div className="w-full rounded-md bg-muted p-2 text-sm"><span className="text-muted-foreground">Item Profit</span><p className="font-semibold text-green-600">${asNumber(item.itemProfit).toFixed(2)}</p>{rule && <p className="text-xs text-muted-foreground">Rate: ${asNumber(item.quantityType === 'gram' ? rule.profitPerGram : rule.profitPerKilogram).toFixed(2)}</p>}</div></div>
+            <div><Label>Item Profit</Label><Input type="number" min="0" step="0.01" value={item.itemProfit || ''} onChange={(event) => setValue(`items.${index}.itemProfit`, asNumber(event.target.value), { shouldDirty: true, shouldValidate: true })} />{errors.items?.[index]?.itemProfit && <p className="mt-1 text-sm text-destructive">{errors.items[index]?.itemProfit?.message}</p>}</div>
           </div>{fields.length > 1 && <div className="flex justify-end"><Button type="button" variant="destructive" size="sm" onClick={() => remove(index)}><Trash2 className="h-4 w-4" /></Button></div>}</motion.div>; })}</AnimatePresence>
         </section>
         <section><Label htmlFor="deliveryCharges">Delivery Charges</Label><Input id="deliveryCharges" type="number" min="0" step="0.01" value={deliveryCharges || ''} onChange={(event) => setValue('deliveryCharges', asNumber(event.target.value), { shouldDirty: true, shouldValidate: true })} />{errors.deliveryCharges && <p className="mt-1 text-sm text-destructive">{errors.deliveryCharges.message}</p>}</section>

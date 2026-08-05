@@ -151,6 +151,12 @@ export default function SettingsModal({
       toast.error(error.response?.data?.message || "Failed to create product");
     },
   });
+
+  const handleCreateProduct = useCallback((event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const productName = newProductName.trim();
+    if (productName) createProductMutation.mutate(productName);
+  }, [createProductMutation, newProductName]);
   
   const updateProductMutation = useMutation({
     mutationFn: ({ id, name }: { id: number; name: string }) =>
@@ -457,22 +463,15 @@ export default function SettingsModal({
                     ))}
 
                     {/* Add new product */}
-                    <div className="flex items-center space-x-2">
+                    <form className="flex items-center space-x-2" onSubmit={handleCreateProduct}>
                       <Input
                         placeholder="New product name"
                         value={newProductName}
                         onChange={(e) => setNewProductName(e.target.value)}
                         className="flex-1"
-                        onKeyPress={(e) => {
-                          if (e.key === "Enter" && newProductName.trim()) {
-                            createProductMutation.mutate(newProductName);
-                          }
-                        }}
                       />
                       <Button
-                        onClick={() =>
-                          createProductMutation.mutate(newProductName)
-                        }
+                        type="submit"
                         disabled={
                           !newProductName.trim() ||
                           createProductMutation.isPending
@@ -481,7 +480,7 @@ export default function SettingsModal({
                         <Plus className="h-4 w-4 mr-2" />
                         Add
                       </Button>
-                    </div>
+                    </form>
 
                     {/* Update all button */}
                     {products.length > 0 && (
